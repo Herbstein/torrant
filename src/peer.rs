@@ -11,7 +11,7 @@ pub enum PeerError {
     #[error("Incorrect message length for message type")]
     IncorrectMessageLen(u8),
     #[error("IO Error")]
-    Other(#[from] io::Error),
+    IoError(#[from] io::Error),
 }
 
 pub struct PeerProtocol;

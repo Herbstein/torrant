@@ -20,6 +20,7 @@ pub enum HandshakeError {
 
 pub struct HandshakeProtocol;
 
+// TODO: Remove protocol text from struct? It's dead weight that doesn't change
 pub struct Handshake {
     text: [u8; 19],
     reserved: [u8; 8],

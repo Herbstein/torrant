@@ -22,6 +22,7 @@ pub struct Info {
 }
 
 impl Info {
+    /// Calculate SHA-1 info hash
     pub fn info_hash(&self) -> Result<Vec<u8>> {
         let data = serde_bencode::to_bytes(self).context("failed to serialize info struct")?;
 
