@@ -9,7 +9,7 @@ use crate::util::ReadExactExt;
 const PROTOCOL_NAME: &[u8] = b"BitTorrentprotocol";
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum HandshakeError {
     #[error("Wrong prefix ({0}) supplied")]
     WrongPrefix(u8),
     #[error("The string 'BitTorrent protocol' not encountered in handshake")]
@@ -30,7 +30,7 @@ pub struct Handshake {
 impl Decoder for HandshakeProtocol {
     type Item = Handshake;
 
-    type Error = Error;
+    type Error = HandshakeError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // Header has static size. Don't start parsing until a headers worth of bytes have been received
@@ -39,30 +39,35 @@ impl Decoder for HandshakeProtocol {
             return Ok(None);
         }
 
+        // Length prefix of the protocol name in the handshake
         let prefix = src.get_u8();
         if prefix != 19 {
-            return Err(Error::WrongPrefix(prefix));
+            return Err(HandshakeError::WrongPrefix(prefix));
         }
 
-        let text = match src.read_exact() {
+        // Protocol name is the same 19 bytes
+        let text = match src.read_exact_arr() {
             Some(text) => text,
             None => return Ok(None),
         };
         if text != PROTOCOL_NAME {
-            return Err(Error::NoProtocolText);
+            return Err(HandshakeError::NoProtocolText);
         }
 
-        let reserved = match src.read_exact() {
+        // 8 reserved bytes
+        let reserved = match src.read_exact_arr() {
             Some(reserved) => reserved,
             None => return Ok(None),
         };
 
-        let hash = match src.read_exact() {
+        // Info hash is 20 bytes from SHA1
+        let hash = match src.read_exact_arr() {
             Some(hash) => hash,
             None => return Ok(None),
         };
 
-        let peer_id = match src.read_exact() {
+        // Peer ID is 20 bytes
+        let peer_id = match src.read_exact_arr() {
             Some(peer_id) => peer_id,
             None => return Ok(None),
         };
@@ -77,7 +82,7 @@ impl Decoder for HandshakeProtocol {
 }
 
 impl Encoder<Handshake> for HandshakeProtocol {
-    type Error = Error;
+    type Error = HandshakeError;
 
     fn encode(&mut self, item: Handshake, dst: &mut BytesMut) -> Result<(), Self::Error> {
         // Header has static size
