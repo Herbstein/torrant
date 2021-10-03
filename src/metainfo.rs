@@ -1,5 +1,3 @@
-use std::fmt;
-
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
@@ -10,7 +8,7 @@ pub struct Metainfo {
     info: Info,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Info {
     name: String,
     #[serde(rename = "piece length")]
@@ -32,17 +30,6 @@ impl Info {
         let res = hasher.finalize();
 
         Ok(res.as_slice().to_vec())
-    }
-}
-
-impl fmt::Debug for Info {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Info")
-            .field("name", &self.name)
-            .field("piece_length", &self.piece_length)
-            .field("pieces", &self.pieces)
-            .field("key", &self.key)
-            .finish()
     }
 }
 

@@ -4,16 +4,9 @@ use std::{
 };
 
 use bytes::{Buf, BytesMut};
-use thiserror::Error;
 
 pub trait ReadExactExt {
     fn read_exact_arr<const N: usize>(&mut self) -> Option<[u8; N]>;
-}
-
-#[derive(Debug, Error)]
-pub enum ReadExactError {
-    #[error("not enough bytes in buffer, expected {0}")]
-    NotEnoughRemaining(usize),
 }
 
 impl ReadExactExt for BytesMut {

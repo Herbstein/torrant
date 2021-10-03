@@ -18,7 +18,7 @@ pub enum HandshakeError {
     IoError(#[from] io::Error),
 }
 
-pub struct HandshakeProtocol;
+pub struct HandshakeCodec;
 
 // TODO: Remove protocol text from struct? It's dead weight that doesn't change
 pub struct Handshake {
@@ -28,7 +28,7 @@ pub struct Handshake {
     peer_id: [u8; 20],
 }
 
-impl Decoder for HandshakeProtocol {
+impl Decoder for HandshakeCodec {
     type Item = Handshake;
 
     type Error = HandshakeError;
@@ -82,7 +82,7 @@ impl Decoder for HandshakeProtocol {
     }
 }
 
-impl Encoder<Handshake> for HandshakeProtocol {
+impl Encoder<Handshake> for HandshakeCodec {
     type Error = HandshakeError;
 
     fn encode(&mut self, item: Handshake, dst: &mut BytesMut) -> Result<(), Self::Error> {

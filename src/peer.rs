@@ -14,7 +14,7 @@ pub enum PeerError {
     IoError(#[from] io::Error),
 }
 
-pub struct PeerProtocol;
+pub struct PeerCodec;
 
 #[repr(u8)]
 enum PeerMessageKind {
@@ -109,7 +109,7 @@ impl PeerMessage {
     }
 }
 
-impl Decoder for PeerProtocol {
+impl Decoder for PeerCodec {
     type Item = PeerMessage;
 
     type Error = PeerError;
@@ -206,7 +206,7 @@ impl Decoder for PeerProtocol {
     }
 }
 
-impl Encoder<PeerMessage> for PeerProtocol {
+impl Encoder<PeerMessage> for PeerCodec {
     type Error = PeerError;
 
     fn encode(&mut self, item: PeerMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
