@@ -20,10 +20,7 @@ pub enum HandshakeError {
 
 pub struct HandshakeCodec;
 
-// TODO: Remove protocol text from struct? It's dead weight that doesn't change
 pub struct Handshake {
-    text: [u8; 19],
-    reserved: [u8; 8],
     hash: [u8; 20],
     peer_id: [u8; 20],
 }
@@ -47,7 +44,7 @@ impl Decoder for HandshakeCodec {
         }
 
         // Protocol name is the same 19 bytes
-        let text = match src.read_exact_arr() {
+        let text = match src.read_exact_arr::<19>() {
             Some(text) => text,
             None => return Ok(None),
         };
@@ -56,7 +53,7 @@ impl Decoder for HandshakeCodec {
         }
 
         // 8 reserved bytes
-        let reserved = match src.read_exact_arr() {
+        match src.read_exact_arr::<8>() {
             Some(reserved) => reserved,
             None => return Ok(None),
         };
@@ -73,12 +70,7 @@ impl Decoder for HandshakeCodec {
             None => return Ok(None),
         };
 
-        Ok(Some(Handshake {
-            text,
-            reserved,
-            hash,
-            peer_id,
-        }))
+        Ok(Some(Handshake { hash, peer_id }))
     }
 }
 

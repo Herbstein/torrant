@@ -1,11 +1,22 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
+
+use crate::InfoHash;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Metainfo {
     announce: String,
     info: Info,
+}
+
+impl Metainfo {
+    pub fn info(&self) -> &Info {
+        &self.info
+    }
+
+    pub fn announce_url(&self) -> &str {
+        &self.announce
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -21,23 +32,34 @@ pub struct Info {
 
 impl Info {
     /// Calculate SHA-1 info hash
-    pub fn info_hash(&self) -> Result<Vec<u8>> {
-        let data = serde_bencode::to_bytes(self).context("failed to serialize info struct")?;
+    pub fn info_hash(&self) -> Vec<u8> {
+        // `expect`ing here is fine because the serializer is infallible and no floating point numbers are used in the protocol
+        let data = serde_bencode::to_bytes(self).expect("piece serialization is broken");
 
         let mut hasher = Sha1::new();
         hasher.update(&data);
 
-        let res = hasher.finalize();
+        let info_hash = hasher.finalize();
 
-        Ok(res.as_slice().to_vec())
+        info_hash.to_vec()
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.piece_length * self.pieces.count()
     }
 }
 
 #[derive(Debug)]
 pub struct Pieces(Vec<Piece>);
 
+impl Pieces {
+    pub fn count(&self) -> usize {
+        self.0.len()
+    }
+}
+
 #[derive(Debug)]
-pub struct Piece([u8; 20]);
+pub struct Piece(InfoHash);
 
 mod pieces_serde {
     use std::{convert::TryInto, fmt};
