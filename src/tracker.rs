@@ -1,9 +1,8 @@
-use std::{error, fmt::Write, io::Read};
+use std::{error, fmt::Write, net::Ipv4Addr};
 
-use bytes::Buf;
 use rand::{distributions::Alphanumeric, prelude::Distribution, thread_rng};
 use reqwest::{Client, Method};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::metainfo::Info;
@@ -36,14 +35,13 @@ impl Tracker {
 
         let peer_id = Alphanumeric
             .sample_iter(&mut thread_rng())
-            .take(10)
+            .take(20)
             .collect::<Vec<_>>();
 
         let peer_id =
             String::from_utf8(peer_id).expect("peer_id should always be valid alphanumeric ASCII");
 
         let info_hash = info.info_hash();
-        let info_hash_encoded = urlencoding::encode_binary(&info_hash).into_owned();
 
         let mut req = client
             .request(Method::GET, &self.url)
@@ -58,11 +56,30 @@ impl Tracker {
             .build()
             .map_err(|_| TrackerError::BuildingRequestFailed)?;
 
+        fn url_encode_bytes(content: &[u8]) -> String {
+            let mut out = String::new();
+
+            for byte in content.iter() {
+                match *byte as char {
+                    c @ ('0'..='9' | 'a'..='z' | 'A'..='Z' | '.' | '-' | '_' | '~') => out.push(c),
+                    ' ' => out.push('+'),
+                    _ => out.push_str(&format!("%{:02X}", byte)),
+                }
+            }
+
+            out
+        }
+
         // `.query()` on the RequestBuilder double-encodes the info_hash encoding
         // Manually append to avoid
-        req.url_mut()
-            .query_pairs_mut()
-            .append_pair("info_hash", &url_encode_bytes(&info_hash).expect("err2"));
+        let query_url = req.url().query().expect("query URL definitely set");
+        let query_url = format!(
+            "{}&{}={}",
+            query_url,
+            "info_hash",
+            url_encode_bytes(&info_hash)
+        );
+        req.url_mut().set_query(Some(&query_url));
 
         let resp = client
             .execute(req)
@@ -74,48 +91,33 @@ impl Tracker {
             .await
             .map_err(|_| TrackerError::NoBodyInTrackerResponse)?;
 
-        let mut vec_body = Vec::new();
-        body.reader().read_to_end(&mut vec_body).expect("err");
-
-        let body = vec_body.as_slice();
-
-        let body_str = std::str::from_utf8(body);
-
-        let tracker_result = serde_bencode::from_bytes(body)
-            .map_err(|_| TrackerError::InvalidBodyInTrackerResponse)?;
+        let tracker_result = serde_bencode::from_bytes(&body).unwrap();
 
         let tracker_response = match tracker_result {
             TrackerResult::Failure { failure_reason } => {
-                return Err(TrackerError::TrackerReturnedError(failure_reason))
+                return Err(TrackerError::TrackerReturnedError(
+                    String::from_utf8(failure_reason).unwrap(),
+                ))
             }
-            TrackerResult::Success { interval, peers } => TrackerResponse { interval, peers },
+            TrackerResult::Success {
+                interval, peers, ..
+            } => TrackerResponse { interval, peers },
         };
 
         Ok(tracker_response)
     }
 }
 
-pub fn url_encode_bytes(content: &[u8]) -> Result<String, Box<dyn error::Error>> {
-    let mut out = String::new();
-
-    for byte in content.iter() {
-        match *byte as char {
-            c @ ('0'..='9' | 'a'..='z' | 'A'..='Z' | '.' | '-' | '_' | '~') => out.push(c),
-            _ => write!(&mut out, "%{:02X}", byte)?,
-        }
-    }
-
-    Ok(out)
-}
-
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 enum TrackerResult {
     Failure {
         #[serde(rename = "failure reason")]
-        failure_reason: String,
+        failure_reason: Vec<u8>,
     },
     Success {
+        complete: usize,
+        incomplete: usize,
         interval: usize,
         peers: Vec<Peer>,
     },
@@ -127,9 +129,12 @@ pub struct TrackerResponse {
     peers: Vec<Peer>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+// TODO: Custom byte-to... conversion for IP
+#[derive(Deserialize, Debug)]
 pub struct Peer {
-    peer_id: String,
-    ip: String,
+    #[serde(rename = "peer id", with = "serde_bytes")]
+    peer_id: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    ip: Vec<u8>,
     port: u16,
 }
