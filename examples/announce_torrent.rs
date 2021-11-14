@@ -11,4 +11,5 @@ async fn main() {
     let response = tracker.announce(torrent.info()).await.unwrap();
 
     println!("{:?}", response);
+    //println!("Found {} peers", response.peers.len());
 }
