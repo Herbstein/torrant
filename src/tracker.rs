@@ -142,12 +142,19 @@ pub struct TrackerResponse {
     complete: usize,
     incomplete: usize,
     interval: usize,
-    peers: Vec<Peer>,
+    peers: Peers,
 }
 
-// TODO: Custom from-bytes... conversion into Ipv4Addr
 #[derive(Deserialize, Debug)]
-pub struct Peer {
+#[serde(untagged)]
+pub enum Peers {
+    Dictionary(Vec<DictionaryPeer>),
+    #[serde(deserialize_with = "deserialize_bytes_into_binary_peer_vec")]
+    Binary(Vec<BinaryPeer>),
+}
+
+#[derive(Deserialize, Debug)]
+pub struct DictionaryPeer {
     #[serde(rename = "peer id", with = "serde_bytes")]
     peer_id: Vec<u8>,
     #[serde(deserialize_with = "deserialize_bytes_to_peer_ip")]
@@ -156,7 +163,53 @@ pub struct Peer {
 }
 
 #[derive(Debug)]
-enum PeerIp {
+pub struct BinaryPeer {
+    addr: IpAddr,
+    port: u16,
+}
+
+fn deserialize_bytes_into_binary_peer_vec<'de, D>(
+    deserializer: D,
+) -> Result<Vec<BinaryPeer>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct BinaryPeersBytesVisitor;
+
+    impl<'de> Visitor<'de> for BinaryPeersBytesVisitor {
+        type Value = Vec<BinaryPeer>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("byte-string with a length multiple of 6")
+        }
+
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v.len() % 6 != 0 {
+                return Err(E::custom("bytes not a multiple of 6"));
+            }
+
+            let chunks = v.chunks(6).map(|chunk| {
+                let ip: [u8; 4] = chunk[0..4].try_into().unwrap();
+                let port: [u8; 2] = chunk[5..6].try_into().unwrap();
+
+                let addr = IpAddr::from(ip);
+                let port = u16::from_be_bytes(port);
+
+                BinaryPeer { addr, port }
+            });
+
+            Ok(chunks.collect())
+        }
+    }
+
+    deserializer.deserialize_bytes(BinaryPeersBytesVisitor)
+}
+
+#[derive(Debug)]
+pub enum PeerIp {
     IpAddr(IpAddr),
     Dns(String),
 }
@@ -188,5 +241,5 @@ where
         }
     }
 
-    deserializer.deserialize_byte_buf(IpBytesVisitor)
+    deserializer.deserialize_bytes(IpBytesVisitor)
 }
