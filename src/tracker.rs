@@ -5,7 +5,7 @@ use std::{
 };
 
 use rand::{distributions::Alphanumeric, prelude::Distribution, thread_rng};
-use reqwest::{Client, Method};
+use reqwest::{Client, Method, Url};
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer,
@@ -26,18 +26,28 @@ pub enum TrackerError {
     InvalidBodyInTrackerResponse,
     #[error("Announce failed with reason '{0}'")]
     TrackerReturnedError(String),
+    #[error("Unknown tracker scheme '{0}'")]
+    UnknownTrackerScheme(String),
 }
 
 pub struct Tracker {
-    url: String,
+    url: Url,
 }
 
 impl Tracker {
-    pub fn new(url: String) -> Tracker {
+    pub fn new(url: Url) -> Tracker {
         Tracker { url }
     }
 
     pub async fn announce(&self, info: &Info) -> Result<TrackerResponse, TrackerError> {
+        match self.url.scheme() {
+            "http" | "https" => self.announce_http(info).await,
+            "udp" => self.announce_udp(info).await,
+            scheme => Err(TrackerError::UnknownTrackerScheme(scheme.to_string())),
+        }
+    }
+
+    async fn announce_http(&self, info: &Info) -> Result<TrackerResponse, TrackerError> {
         let client = Client::new();
 
         let peer_id = Alphanumeric
@@ -51,7 +61,7 @@ impl Tracker {
         let info_hash = info.info_hash();
 
         let mut req = client
-            .request(Method::GET, &self.url)
+            .request(Method::GET, self.url.clone())
             .query(&[
                 ("peer_id", peer_id.as_str()),
                 // ("ip", ""), <-- optional. wanna use anyway?
@@ -110,6 +120,10 @@ impl Tracker {
         };
 
         Ok(tracker_response)
+    }
+
+    async fn announce_udp(&self, _info: &Info) -> Result<TrackerResponse, TrackerError> {
+        unimplemented!("implement UDP tracker")
     }
 }
 
