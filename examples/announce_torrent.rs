@@ -1,5 +1,4 @@
-use reqwest::Url;
-use torrant::{metainfo::Metainfo, tracker::Tracker};
+use torrant::{metainfo::Metainfo, tracker::Tracker, Url};
 
 #[tokio::main]
 async fn main() {

@@ -150,19 +150,25 @@ pub struct TrackerResponse {
 pub struct Peer {
     #[serde(rename = "peer id", with = "serde_bytes")]
     peer_id: Vec<u8>,
-    #[serde(deserialize_with = "deserialize_bytes_to_ipv4_addr")]
-    ip: IpAddr,
+    #[serde(deserialize_with = "deserialize_bytes_to_peer_ip")]
+    ip: PeerIp,
     port: u16,
 }
 
-fn deserialize_bytes_to_ipv4_addr<'de, D>(deserializer: D) -> Result<IpAddr, D::Error>
+#[derive(Debug)]
+enum PeerIp {
+    IpAddr(IpAddr),
+    Dns(String),
+}
+
+fn deserialize_bytes_to_peer_ip<'de, D>(deserializer: D) -> Result<PeerIp, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct IpBytesVisitor;
 
     impl<'de> Visitor<'de> for IpBytesVisitor {
-        type Value = IpAddr;
+        type Value = PeerIp;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("exactly 4 or 16 bytes, or utf-8 representations of an IP address")
@@ -172,24 +178,12 @@ where
         where
             E: de::Error,
         {
-            match v.len() {
-                4 => {
-                    // Raw IPv4 bytes
-                    let bytes: [u8; 4] = v.try_into().unwrap();
-                    Ok(IpAddr::from(bytes))
-                }
-                16 => {
-                    // Raw IPv6 bytes
-                    let bytes: [u8; 16] = v.try_into().unwrap();
-                    Ok(IpAddr::from(bytes))
-                }
-                _ => {
-                    // assume string representation, error otherwise
-                    match str::from_utf8(v) {
-                        Ok(s) => IpAddr::from_str(s).map_err(|e| E::custom(e.to_string())),
-                        Err(_) => Err(E::custom("invalid bytes in ip string representation")),
-                    }
-                }
+            match str::from_utf8(v) {
+                Ok(s) => match IpAddr::from_str(s) {
+                    Ok(ip) => Ok(PeerIp::IpAddr(ip)),
+                    Err(_) => Ok(PeerIp::Dns(s.to_string())),
+                },
+                Err(_) => Err(E::custom("invalid bytes in ip string representation")),
             }
         }
     }
