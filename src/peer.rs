@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, io};
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -9,12 +9,28 @@ pub enum PeerError {
     #[error("Invalid message type")]
     InvalidMessageId(u8),
     #[error("Incorrect message length for message type")]
-    IncorrectMessageLen(u8),
+    IncorrectMessageLen(u32),
     #[error("IO Error")]
     IoError(#[from] io::Error),
 }
 
-pub struct PeerCodec;
+pub struct PeerCodec {
+    am_choking: bool,
+    am_interested: bool,
+    peer_choking: bool,
+    peer_interested: bool,
+}
+
+impl Default for PeerCodec {
+    fn default() -> Self {
+        Self {
+            am_choking: true,
+            am_interested: false,
+            peer_choking: true,
+            peer_interested: false,
+        }
+    }
+}
 
 #[repr(u8)]
 enum PeerMessageKind {
@@ -30,7 +46,7 @@ enum PeerMessageKind {
 }
 
 impl PeerMessageKind {
-    pub fn msg_len(&self) -> Option<u8> {
+    pub fn msg_len(&self) -> Option<u32> {
         Some(match self {
             PeerMessageKind::Choke => 1,
             PeerMessageKind::Unchoke => 1,
@@ -38,9 +54,8 @@ impl PeerMessageKind {
             PeerMessageKind::NotInterested => 1,
             PeerMessageKind::Have => 5,
             PeerMessageKind::Request => 13,
-            PeerMessageKind::Piece => 13,
             PeerMessageKind::Cancel => 13,
-            PeerMessageKind::Bitfield => return None,
+            PeerMessageKind::Bitfield | PeerMessageKind::Piece => return None,
         })
     }
 }
@@ -71,9 +86,21 @@ pub enum PeerMessage {
     NotInterested,
     Have(u32),
     Bitfield(Vec<u8>),
-    Request { index: u32, begin: u32, length: u32 },
-    Piece { index: u32, begin: u32, piece: u32 },
-    Cancel { index: u32, begin: u32, length: u32 },
+    Request {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
+    Piece {
+        index: u32,
+        begin: u32,
+        piece: Vec<u8>,
+    },
+    Cancel {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
     KeepAlive,
 }
 
@@ -102,9 +129,9 @@ impl PeerMessage {
             PeerMessage::NotInterested => 1,
             PeerMessage::Have(_) => 5,
             PeerMessage::Request { .. } => 13,
-            PeerMessage::Piece { .. } => 13,
+            PeerMessage::Piece { piece, .. } => 9 + piece.len(),
             PeerMessage::Cancel { .. } => 13,
-            PeerMessage::Bitfield(x) => x.len(),
+            PeerMessage::Bitfield(x) => 1 + x.len(),
         }
     }
 }
@@ -121,7 +148,7 @@ impl Decoder for PeerCodec {
         }
 
         // Get the length prefix of message
-        let len = src.get_u8();
+        let len = src.get_u32();
 
         // Zero-length messages are keep-alive heartbeats
         if len == 0 {
@@ -142,9 +169,8 @@ impl Decoder for PeerCodec {
         let message_kind = PeerMessageKind::try_from(id).map_err(PeerError::InvalidMessageId)?;
 
         // Find the static length of the message kind.
-        // Bitfields don't have a fixed length
-        let message_len = message_kind.msg_len();
-        if let Some(message_len) = message_len {
+        // Bitfields and pieces don't have a fixed length, don't check those
+        if let Some(message_len) = message_kind.msg_len() {
             if len != message_len {
                 return Err(PeerError::IncorrectMessageLen(len));
             }
@@ -181,7 +207,11 @@ impl Decoder for PeerCodec {
             PeerMessageKind::Piece => {
                 let index = src.get_u32();
                 let begin = src.get_u32();
-                let piece = src.get_u32();
+
+                let piece_size = len as usize - 9;
+
+                let mut piece = Vec::with_capacity(piece_size);
+                piece.put(src.take(piece_size));
 
                 PeerMessage::Piece {
                     index,
@@ -247,7 +277,7 @@ impl Encoder<PeerMessage> for PeerCodec {
             } => {
                 dst.put_u32(index);
                 dst.put_u32(begin);
-                dst.put_u32(piece);
+                dst.put(Bytes::from(piece));
             }
             PeerMessage::Cancel {
                 index,

@@ -163,6 +163,12 @@ pub struct DictionaryPeer {
 }
 
 #[derive(Debug)]
+pub enum PeerIp {
+    IpAddr(IpAddr),
+    Dns(String),
+}
+
+#[derive(Debug)]
 pub struct BinaryPeer {
     addr: IpAddr,
     port: u16,
@@ -206,12 +212,6 @@ where
     }
 
     deserializer.deserialize_bytes(BinaryPeersBytesVisitor)
-}
-
-#[derive(Debug)]
-pub enum PeerIp {
-    IpAddr(IpAddr),
-    Dns(String),
 }
 
 fn deserialize_bytes_to_peer_ip<'de, D>(deserializer: D) -> Result<PeerIp, D::Error>
