@@ -73,20 +73,6 @@ impl Tracker {
             .build()
             .map_err(|_| TrackerError::BuildingRequestFailed)?;
 
-        fn url_encode_bytes(content: &[u8]) -> String {
-            let mut out = String::new();
-
-            for byte in content.iter() {
-                match *byte as char {
-                    c @ ('0'..='9' | 'a'..='z' | 'A'..='Z' | '.' | '-' | '_' | '~') => out.push(c),
-                    ' ' => out.push('+'),
-                    _ => out.push_str(&format!("%{:02X}", byte)),
-                }
-            }
-
-            out
-        }
-
         // `.query()` on the RequestBuilder re-encodes the already encoded info_hash
         // Manually append to avoid
         let query_url = req.url().query().expect("query URL definitely set");
@@ -242,4 +228,32 @@ where
     }
 
     deserializer.deserialize_bytes(IpBytesVisitor)
+}
+
+fn url_encode_bytes(content: &[u8]) -> String {
+    let mut out = String::new();
+
+    for byte in content.iter() {
+        match *byte as char {
+            c @ ('0'..='9' | 'a'..='z' | 'A'..='Z' | '.' | '-' | '_' | '~') => out.push(c),
+            ' ' => out.push('+'),
+            _ => out.push_str(&format!("%{:02X}", byte)),
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tracker::url_encode_bytes;
+
+    #[test]
+    fn test_byte_encode() {
+        let bytes =
+            b"\x12\x34\x56\x78\x9a\xbc\xde\xf1\x23\x45\x67\x89\xab\xcd\xef\x12\x34\x56\x78\x9a";
+        let encoded = url_encode_bytes(bytes);
+
+        assert_eq!(encoded, "%124Vx%9A%BC%DE%F1%23Eg%89%AB%CD%EF%124Vx%9A")
+    }
 }
