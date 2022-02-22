@@ -68,6 +68,7 @@ impl Tracker {
                 ("port", "6881"),
                 ("uploaded", "0"),
                 ("downloaded", "0"),
+                ("compact", "1"),
                 ("left", &info.total_bytes().to_string()),
             ])
             .build()
@@ -180,12 +181,12 @@ where
             E: de::Error,
         {
             if v.len() % 6 != 0 {
-                return Err(E::custom("bytes not a multiple of 6"));
+                return Err(E::custom("byte length not a multiple of 6"));
             }
 
             let chunks = v.chunks(6).map(|chunk| {
                 let ip: [u8; 4] = chunk[0..4].try_into().unwrap();
-                let port: [u8; 2] = chunk[5..6].try_into().unwrap();
+                let port: [u8; 2] = chunk[4..6].try_into().unwrap();
 
                 let addr = IpAddr::from(ip);
                 let port = u16::from_be_bytes(port);
