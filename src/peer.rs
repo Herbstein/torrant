@@ -243,7 +243,7 @@ impl Encoder<PeerMessage> for PeerCodec {
         let len = item.msg_len();
 
         // Write length of peer message
-        dst.put_u8(len as u8);
+        dst.put_u32(len as u32);
 
         let kind = match item.kind() {
             Some(kind) => kind,
