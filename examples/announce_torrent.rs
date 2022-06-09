@@ -2,7 +2,7 @@ use torrant::{metainfo::Metainfo, tracker::Tracker, Url};
 
 #[tokio::main]
 async fn main() {
-    let x = std::fs::read("data/ubuntu.torrent").unwrap();
+    let x = std::fs::read("data/unsavory_fhorizon5.torrent").unwrap();
     let torrent = serde_bencode::from_bytes::<Metainfo>(&x).unwrap();
 
     let tracker_url = torrent.announce_url();
@@ -11,5 +11,6 @@ async fn main() {
     let response = tracker.announce(torrent.info()).await.unwrap();
 
     println!("{:?}", response);
+
     //println!("Found {} peers", response.peers.len());
 }

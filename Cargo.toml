@@ -4,14 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+binread = { version = "2.2.0", features = ["const_generics"] }
+binwrite = "0.2.1"
 bytes = "1.1.0"
 rand = "0.8.5"
-reqwest = "0.11.9"
+reqwest = { version = "0.11.9", features = ["json"] }
 serde = { version = "1.0.136", features = ["derive"] }
 serde_bencode = "0.2.3"
 serde_bytes = "0.11.5"
 sha-1 = "0.10.0"
 thiserror = "1.0.30"
+tokio = "1.17.0"
 tokio-util = { version = "0.7.0", default-features = false, features = [
     "codec",
 ] }

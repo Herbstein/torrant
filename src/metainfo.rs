@@ -6,6 +6,7 @@ use crate::InfoHash;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Metainfo {
     announce: String,
+
     info: Info,
 }
 
