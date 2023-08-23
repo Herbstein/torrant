@@ -26,7 +26,7 @@ struct CompactTrackerResponse {
 async fn main() -> Result<()> {
     let mut file = OpenOptions::new()
         .read(true)
-        .open("torrents/test1.torrent")
+        .open("data/test1.torrent")
         .unwrap();
 
     let mut data = Vec::new();
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
         .iter()
         .map(|(ip, port)| peer::connect(info_hash, peer_id, (*ip, *port)));
 
-    let connections_future = futures::future::join_all(connect_futures)
+    futures::future::join_all(connect_futures)
         .await
         .into_iter()
         .for_each(|r| println!("{r:?}"));
