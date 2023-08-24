@@ -56,6 +56,10 @@ impl Info {
             FileMode::Multi { ref files, .. } => files.iter().map(|f| f.length).sum(),
         }
     }
+
+    pub fn piece_length(&self) -> usize {
+        self.piece_length
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

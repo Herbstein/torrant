@@ -1,13 +1,14 @@
 use std::net::Ipv4Addr;
 
 use anyhow::Result;
+use futures::{SinkExt, StreamExt};
 use rand::{thread_rng, RngCore};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
 use tokio::{fs::OpenOptions, io::AsyncReadExt};
 
-use crate::info::Torrent;
+use crate::{info::Torrent, peer::PeerMessage};
 
 mod info;
 mod peer;
@@ -43,7 +44,7 @@ struct CompactTrackerResponse {
 async fn main() -> Result<()> {
     let mut file = OpenOptions::new()
         .read(true)
-        .open("data/test1.torrent")
+        .open("data/test3.torrent")
         .await
         .unwrap();
 
@@ -58,9 +59,6 @@ async fn main() -> Result<()> {
     let peer_id = generate_peer_id();
     let peer_id_formencoded = form_encode(&peer_id);
 
-    println!("{:x?}", peer_id);
-    println!("{:?}", peer_id_formencoded);
-
     let left = torrent.info.length();
 
     let client = Client::new();
@@ -69,8 +67,6 @@ async fn main() -> Result<()> {
     req.url_mut().set_query(Some(&format!(
        "info_hash={info_hash_formencoded}&peer_id={peer_id_formencoded}&port=6881&uploaded=0&downloaded=0&left={left}&event=started&compact=1"
     )));
-
-    println!("{:?}", req.url());
 
     let resp = client.execute(req).await?;
     let body = resp.bytes().await?;
@@ -93,16 +89,76 @@ async fn main() -> Result<()> {
             (ip, port)
         })
         .collect::<Vec<_>>();
-    println!("{peers:?}");
+    // println!("{:?}", peers);
 
-    let connect_futures = peers
-        .iter()
-        .map(|(ip, port)| peer::connect(info_hash, peer_id, (*ip, *port)));
+    let mut buffer = vec![0; torrent.info.length()];
 
-    futures::future::join_all(connect_futures)
-        .await
-        .into_iter()
-        .for_each(|r| println!("{r:?}"));
+    let framed = peer::connect(info_hash, peer_id, ("localhost", 16355)).await?;
+    let (mut writer, mut reader) = framed.split();
+
+    writer.send(PeerMessage::Interested).await?;
+    writer.send(PeerMessage::Unchoke).await?;
+
+    let mut current_piece = 0;
+
+    while let Some(Ok(data)) = reader.next().await {
+        // println!("{data:x?}");
+
+        match data {
+            PeerMessage::Unchoke => {
+                writer
+                    .send(PeerMessage::Request(
+                        current_piece,
+                        0,
+                        torrent.info.piece_length() as u32,
+                    ))
+                    .await?
+            }
+            PeerMessage::Piece(piece_index, block_index, block_data) => {
+                println!("Received {} bytes in block", block_data.len());
+
+                let start_idx =
+                    piece_index as usize * torrent.info.piece_length() + block_index as usize;
+                buffer.splice(start_idx..start_idx + block_data.len(), block_data);
+
+                writer.send(PeerMessage::Have(current_piece)).await?;
+
+                current_piece += 1;
+
+                let total_full_pieces = torrent.info.length() / torrent.info.piece_length();
+
+                if current_piece < total_full_pieces as u32 {
+                    writer
+                        .send(PeerMessage::Request(
+                            current_piece,
+                            0,
+                            torrent.info.piece_length() as u32,
+                        ))
+                        .await?;
+                } else if current_piece == total_full_pieces as u32 {
+                    writer
+                        .send(PeerMessage::Request(
+                            current_piece,
+                            0,
+                            (torrent.info.length() % torrent.info.piece_length()) as u32,
+                        ))
+                        .await?;
+                } else {
+                    println!("Received all bytes!")
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // let connect_futures = peers
+    //     .iter()
+    //     .map(|(ip, port)| peer::connect(info_hash, peer_id, (*ip, *port)));
+    //
+    // futures::future::join_all(connect_futures)
+    //     .await
+    //     .into_iter()
+    //     .for_each(|r| println!("{r:?}"));
 
     Ok(())
 }

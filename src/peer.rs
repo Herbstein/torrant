@@ -1,13 +1,12 @@
 use std::io;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use futures::{SinkExt, StreamExt};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, ToSocketAddrs},
 };
-use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
+use tokio_util::codec::{Decoder, Encoder, Framed};
 
 #[derive(Debug)]
 pub enum PeerMessage {
@@ -23,28 +22,12 @@ pub enum PeerMessage {
     Cancel(u32, u32, u32),
 }
 
-pub struct PeerCodec {
-    am_choking: bool,
-    peer_choking: bool,
-    am_interested: bool,
-    peer_interested: bool,
-}
-
-impl PeerCodec {
-    pub fn new() -> Self {
-        Self {
-            am_choking: true,
-            am_interested: false,
-            peer_choking: true,
-            peer_interested: false,
-        }
-    }
-}
+pub struct PeerCodec;
 
 macro_rules! read_const_bytes {
     ($src:expr,  $start:expr, $len:expr) => {{
         let mut data = [0; $len];
-        data.copy_from_slice(&$src[$start..$start + $len]);
+        data.copy_from_slice(&$src[$start..][..$len]);
         data
     }};
     ($src:expr, $start:expr, $len:expr, $converter:expr) => {{
@@ -62,8 +45,8 @@ macro_rules! read_u32 {
 impl Encoder<PeerMessage> for PeerCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, item: PeerMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let len = match item {
+    fn encode(&mut self, msg: PeerMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let len = match msg {
             PeerMessage::KeepAlive => 0,
             PeerMessage::Choke => 1,
             PeerMessage::Unchoke => 1,
@@ -78,7 +61,7 @@ impl Encoder<PeerMessage> for PeerCodec {
 
         dst.put_u32(len);
 
-        let id = match item {
+        let id = match msg {
             PeerMessage::KeepAlive => None,
             PeerMessage::Choke => Some(0),
             PeerMessage::Unchoke => Some(1),
@@ -95,7 +78,7 @@ impl Encoder<PeerMessage> for PeerCodec {
             dst.put_u8(id);
         }
 
-        match item {
+        match msg {
             PeerMessage::Have(piece_index) => dst.put_u32(piece_index),
             PeerMessage::Bitfield(bitfield) => dst.put_slice(&bitfield),
             PeerMessage::Request(piece_index, block_index, block_length) => {
@@ -140,16 +123,16 @@ impl Decoder for PeerCodec {
             return Ok(Some(PeerMessage::KeepAlive));
         }
 
-        if src.len() < len as usize {
+        if src.len() < 4 + len as usize {
             src.reserve(len as usize - src.len());
             return Ok(None);
         }
 
         let mut id = [0; 1];
-        id.copy_from_slice(&src[4..5]);
+        id.copy_from_slice(&src[4..][..1]);
         let id = u8::from_be_bytes(id);
 
-        let x = match id {
+        let peer_message = match id {
             0 => PeerMessage::Choke,
             1 => PeerMessage::Unchoke,
             2 => PeerMessage::Interested,
@@ -157,7 +140,7 @@ impl Decoder for PeerCodec {
             4 => PeerMessage::Have(read_u32!(src, 5)),
             5 => {
                 let bitfield_length = len - 1;
-                let bitfield = src[5..bitfield_length as usize].to_vec();
+                let bitfield = src[5..][..bitfield_length as usize].to_vec();
                 PeerMessage::Bitfield(bitfield)
             }
             6 => PeerMessage::Request(read_u32!(src, 5), read_u32!(src, 9), read_u32!(src, 13)),
@@ -166,7 +149,7 @@ impl Decoder for PeerCodec {
                 PeerMessage::Piece(
                     read_u32!(src, 5),
                     read_u32!(src, 9),
-                    src[13..block_length as usize].to_vec(),
+                    src[13..][..block_length as usize].to_vec(),
                 )
             }
             8 => PeerMessage::Cancel(read_u32!(src, 5), read_u32!(src, 9), read_u32!(src, 13)),
@@ -180,7 +163,7 @@ impl Decoder for PeerCodec {
 
         src.advance(4 + len as usize);
 
-        Ok(Some(x))
+        Ok(Some(peer_message))
     }
 }
 
@@ -188,7 +171,7 @@ pub async fn connect(
     info_hash: [u8; 20],
     peer_id: [u8; 20],
     addr: impl ToSocketAddrs,
-) -> Result<()> {
+) -> Result<Framed<TcpStream, PeerCodec>> {
     let mut stream = TcpStream::connect(addr).await?;
     stream.write_u8(19).await?;
     stream.write_all(b"BitTorrent protocol").await?;
@@ -205,13 +188,7 @@ pub async fn connect(
     // assert_eq!(&handshake_recv[20..28], &[0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(&handshake_recv[28..48], &info_hash);
 
-    let (reader, writer) = stream.into_split();
+    let framed = Framed::new(stream, PeerCodec);
 
-    let mut frames = FramedRead::new(reader, PeerCodec::new());
-
-    while let Some(Ok(data)) = frames.next().await {
-        println!("{data:x?}");
-    }
-
-    Ok(())
+    Ok(framed)
 }
