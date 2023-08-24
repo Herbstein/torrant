@@ -21,8 +21,8 @@ impl Torrent {
 
 #[derive(Deserialize, Serialize)]
 pub struct Info {
-    files: Vec<File>,
-    name: String,
+    #[serde(flatten)]
+    mode: FileMode,
     #[serde(rename = "piece length")]
     piece_length: usize,
     pieces: ByteBuf,
@@ -33,8 +33,7 @@ pub struct Info {
 impl fmt::Debug for Info {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Info")
-            .field("files", &self.files)
-            .field("name", &self.name)
+            .field("mode", &self.mode)
             .field("piece_length", &self.piece_length)
             .field("pieces", &"<pieces>")
             .field("private", &self.private)
@@ -52,8 +51,28 @@ impl Info {
     }
 
     pub fn length(&self) -> usize {
-        self.files.iter().map(|f| f.length).sum()
+        match self.mode {
+            FileMode::Single { length, .. } => length,
+            FileMode::Multi { ref files, .. } => files.iter().map(|f| f.length).sum(),
+        }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum FileMode {
+    Single {
+        name: String,
+        length: usize,
+        #[serde(skip)]
+        md5sum: Option<String>,
+    },
+    Multi {
+        name: String,
+        files: Vec<File>,
+        #[serde(skip)]
+        md5sum: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]

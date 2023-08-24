@@ -1,7 +1,7 @@
-use std::{io::Read, net::Ipv4Addr};
+use std::net::Ipv4Addr;
 
 use anyhow::Result;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{thread_rng, RngCore};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
