@@ -26,6 +26,7 @@ pub struct Info {
     #[serde(rename = "piece length")]
     piece_length: usize,
     pieces: ByteBuf,
+    #[serde(default)]
     private: bool,
 }
 
